@@ -1,0 +1,321 @@
+---
+title: "[Thu Ha MAI] M2 project based on Lalive, van Ours, and Zweimuller (2006, ReStud): The Duration of Unemployment"
+output: 
+  html_document:
+    toc: true # table of content true
+---
+
+## **Question 1. What are the contributions of this study?**
+
+### *What are the objectives, and how do they relate to the established literature?*
+This study examines the impact of variations in the benefit replacement rate (RR) and potential benefit duration (PBD), which are the two crucial aspects of unemployment insurance, on the length of unemployment. The 1989 policy shift in Austria is used in the present research to demonstrate the causal relationship between benefit duration and people's willingness to accept jobs.
+
+An extensive body of theoretical research has demonstrated that a more generous unemployment insurance system (via and/or a longer PBD) will decrease an unemployed person's best job search effort, leading to a longer period of unemployment. Additionally, these ideas provide insight into how adjustments to the essential elements of unemployment insurance will impact the exit rate. To be more specific, a rise in RR in particular is expected to have the most impact on periods of unemployment, while a rise in PBD will have the greatest impact around the time that benefits run out, causing "spikes" in the unemployment departure rate.
+
+In order to examine the aforementioned results from the theoretical research, the researchers make use of a sizable and informative dataset that enables them to trace employees' unemployment histories over a lengthy period of time with an aim to evaluate the impact of these changes in unemployment insurance laws. They contrast the total unemployment inflow that occurred two years before to the change in policy with the entire inflow two years thereafter. As a result, they are left with a sizable dataset that enables them to correctly estimate the policy parameters of interest.
+
+### *What is novel about the empirical strategy?*
+Policy endogeneity is a recurring criticism against previous studies on the same subject. Benefits are often increased in anticipation of the eligible workers' job market being worse. Card and Levine (2000) demonstrate that there is a significant policy bias by taking advantage of the variance in benefit length that happened irrespective of labour market conditions. Similar evidence for the Austrian labour market is shown by Lalive and Zweimüller (2004a, b). According to Rød and Zhang's findings in 2003, for Norwegian unemployed people, the exit rate from unemployment rises significantly in the months before to benefit exhaustion, with the effect being more significant for women than for men. Puhani (2000) discovered that PBD cuts in Poland had no discernible impact on the length of unemployment. In their 2006 study on PBD decreases in Slovenia, Van Ours and Vodopivec discovered significant rises around benefit exhaustion as well as notable effects on the exit rate from unemployment.
+
+The early literature focused on variations in benefit replacement ratios between people to evaluate the effects of RR on unemployment lengths. Calculated unemployment length elasticities with regard to benefit levels range from 0 to 1 per cent (Atkinson and Micklewright, 1991). The prospect of unobserved heterogeneity skewing identification in cross-sectional data makes this literature questionable.
+
+Designing effective policies requires reliable empirical knowledge of how the two primary unemployment insurance factors affect the search behaviour of unemployed workers. The majority of earlier empirical investigations split these "exogenous" variation-induced incentive effects into two categories: benefit level changes and PBD changes. While the implications of changing these factors in ceteris paribus are undoubtedly fascinating in and of themselves, it is not possible to address potentially crucial issues about the proper conception of unemployment insurance. Hence, the researchers of this paper decided to divide the total costs of unemployment insurance funds into costs due to changes in the unemployment insurance system with unchanged behaviour and costs due to behavioural responses of unemployed workers using our parameter estimates to determine the relative importance of the two policy parameters.
+
+### *What are the results and how convincing are these?*
+The authors of the paper find that both the rise in RR as well as the expansion of PBD considerably increases the length of unemployment. In line with theoretical assumptions, they show that most of the effect takes place early in the jobless spell in the case of the RR rise and around the dates when benefits expired in the case of the PBD extension.
+
+Although the treated populations' heterogeneity is obvious, the researchers discover that the effects are rather strong. They specifically discover that both estimated effects are independent of changes in the control groups used to measure the treatment impact. There are two significant outliers despite the size of the impacts being relatively robust. First, older workers respond to PBD extensions more strongly than prime-age workers, and second, older workers are more affected by the cumulative effects of simultaneous changes in RR and PBD. Theoretically, the worse labour market position of older workers and/or the incentives produced by the institutional environment might be used to explain why they have a higher response to changes in unemployment insurance laws (early retirement).
+
+The results also indicate that costs related to behavioural reactions are small for increases in RR, but large for increases in PBD. From these data, a simple policy conclusion may be derived: If policymakers intend to affect incentives, the potential duration of unemployment is a more effective instrument than the level of unemployment benefits.
+
+## **Data Preparation**
+
+```{r}
+# Load the libraries
+library(foreign)
+library(tidyverse)
+```
+
+
+```{r}
+# Load the dataset
+udat <- read.dta("C:/Users/AMSE/Documents/Thu_Ha/Transition_Duration_Models/fi.dta")
+udat <- udat[,1:134]
+udat <- as_tibble(udat)
+```
+
+```{r}
+# Take a look at the dataset
+dim(udat)
+glimpse(udat[,1:36])
+table(udat$type)
+```
+```{r}
+# Compute the average spells when the duration is truncated at 104 weeks
+udat %>%
+  mutate(dur104 = dur,
+         dur104 = ifelse(dur104 > 104, 104, dur104)) ->
+  udat
+```
+
+```{r}
+# Attach the dataset to make the codes more elegant
+attach(udat)
+```
+
+
+## **Question 2. (Difference-in-differences) Attempt to replicate Table 4 of the paper**
+
+```{r}
+# Compute the difference between the average duration of unemployment for the control group before and after the reform, which will be used to calculate the Diff-in-diff
+diff_control = mean(dur104[after==1 & type=='control']) - mean(dur104[after==0 & type=='control'])
+diff_control
+```
+
+```{r}
+# The summary table of the average duration of unemployment of different types
+df_summary <- udat %>%
+  group_by(type) %>%
+  dplyr::summarize(average_before_August1989 = mean(dur104[after==0]),
+            N_before_August1989 = sum(after==0),
+            se_before_August1989 = sd(dur104[after==0])/sqrt(N_before_August1989),
+            average_after_August1989 = mean(dur104[after==1]),
+            N_after_August1989 = sum(after==1),
+            se_after_August1989 = sd(dur104[after==1])/sqrt(N_after_August1989),
+            change_afterbefore = average_after_August1989 - average_before_August1989,
+            Dif_in_dif = change_afterbefore - diff_control
+            )
+df_summary
+```
+
+## **Question 3. (Survival Functions) Seek to reproduce Figure 3 in Lalive et al. (2006)**
+
+```{r}
+library(survival)
+library(ggplot2)
+library(ggsurvfit)
+```
+
+
+```{r}
+# For type PBD and RR
+
+# Filter the data with the type PBD and RR
+data_PBDandRR <- filter(udat, type=='PBD and RR')
+
+# Fit the survival model
+sfitPBDandRR = survfit(Surv(dur104, uncc)~after, data=data_PBDandRR, type='kaplan-meier')
+summary(sfitPBDandRR, times=seq(0, 100, 20))
+
+# Plot the survival probability
+ggsurvfit(sfitPBDandRR) +
+  labs(
+    title='Kaplan-Meier Survival functions for the PBD and RR group',
+    x = 'weeks',
+    y = 'survival probability'
+  ) +
+  scale_x_continuous(breaks = c(0, 20, 40, 60, 80, 100)) +
+  scale_y_continuous(breaks = c(0.0, 0.2, 0.4, 0.6, 0.8, 1.0)) +
+  scale_fill_manual(values = c('dodgerblue2', 'orchid2'), labels = c('Before', 'After')) +
+  scale_color_manual(values = c('dodgerblue2', 'orchid2'), labels = c('Before', 'After'))
+```
+
+```{r}
+# For type PBD
+
+# Filter the data with the type PBD
+data_PBD <- filter(udat, type=='PBD')
+
+# Fit the survival model
+sfitPBD = survfit(Surv(dur104, uncc)~after, data=data_PBD, type='kaplan-meier')
+summary(sfitPBD, times=seq(0, 100, 20))
+
+# Plot the survival probability
+ggsurvfit(sfitPBD) +
+  labs(
+    title='Kaplan-Meier Survival functions for the PBD group',
+    x = 'weeks',
+    y = 'survival probability'
+  ) +
+  scale_x_continuous(breaks = c(0, 20, 40, 60, 80, 100)) +
+  scale_y_continuous(breaks = c(0.0, 0.2, 0.4, 0.6, 0.8, 1.0)) +
+  scale_fill_manual(values = c('dodgerblue2', 'orchid2'), labels = c('Before', 'After')) +
+  scale_color_manual(values = c('dodgerblue2', 'orchid2'), labels = c('Before', 'After'))
+```
+
+```{r}
+# For type RR
+
+# Filter the data with the type RR
+data_RR <- filter(udat, type=='RR')
+
+# Fit the survival model
+sfitRR = survfit(Surv(dur104, uncc)~after, data=data_RR, type='kaplan-meier')
+summary(sfitRR, times=seq(0, 100, 20))
+
+# Plot the survival probability
+ggsurvfit(sfitRR) +
+  labs(
+    title='Kaplan-Meier Survival functions for the RR group',
+    x = 'weeks',
+    y = 'survival probability'
+  ) +
+  scale_x_continuous(breaks = c(0, 20, 40, 60, 80, 100)) +
+  scale_y_continuous(breaks = c(0.0, 0.2, 0.4, 0.6, 0.8, 1.0)) +
+  scale_fill_manual(values = c('dodgerblue2', 'orchid2'), labels = c('Before', 'After')) +
+  scale_color_manual(values = c('dodgerblue2', 'orchid2'), labels = c('Before', 'After'))
+```
+
+```{r}
+# For type Control
+
+# Filter the data with the type Control
+data_control <- filter(udat, type=='control')
+
+# Fit the survival model
+sfitcontrol = survfit(Surv(dur104, uncc)~after, data=data_control, type='kaplan-meier')
+summary(sfitcontrol, times=seq(0, 100, 20))
+
+# Plot the survival probability
+ggsurvfit(sfitcontrol) +
+  labs(
+    title='Kaplan-Meier Survival functions for the Control group',
+    x = 'weeks',
+    y = 'survival probability'
+  ) +
+  scale_x_continuous(breaks = c(0, 20, 40, 60, 80, 100)) +
+  scale_y_continuous(breaks = c(0.0, 0.2, 0.4, 0.6, 0.8, 1.0)) +
+  scale_fill_manual(values = c('dodgerblue2', 'orchid2'), labels = c('Before', 'After')) +
+  scale_color_manual(values = c('dodgerblue2', 'orchid2'), labels = c('Before', 'After'))
+```
+
+## **Question 4. (KM estimates of the unemployment exit hazard): Seek to reproduce Figure 4 in Lalive et al. (2006)**
+
+```{r}
+library(bshazard)
+```
+
+
+```{r}
+# The bshazard function adjusts for covariates rather than stratify by covariates
+# This means that we need to divide the dataset into strata and calculate the smoothed hazards separately
+
+# For type PBD and RR
+as.data.frame.bshazard <- function(x, ...) {
+    with(x, data.frame(time, hazard, lower.ci, upper.ci))
+}
+hazards_PBDandRR <- group_by(data_PBDandRR, after) %>% 
+    do(as.data.frame(bshazard(Surv(dur104, uncc)~1, data=., verbose=FALSE, degree=2))) %>% 
+    ungroup
+ggplot(hazards_PBDandRR, aes(x=time, y=hazard, group=after)) + geom_line(aes(col=after)) +
+    geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci, fill=after), alpha=0.3) + ylim(0, 0.15) + xlim(0, 104) +
+    xlab('weeks') + ylab('hazard') + ggtitle('KM estimates of the unemployment exit hazard for the group PBD and RR')
+```
+
+
+```{r}
+# For type PBD
+
+hazards_PBD <- group_by(data_PBD, after) %>% 
+    do(as.data.frame(bshazard(Surv(dur104, uncc)~1, data=., verbose=FALSE, degree=2))) %>% 
+    ungroup
+ggplot(hazards_PBD, aes(x=time, y=hazard, group=after)) + geom_line(aes(col=after)) +
+    geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci, fill=after), alpha=0.3) + ylim(0, 0.15) + xlim(0, 104) +
+    xlab('weeks') + ylab('hazard') + ggtitle('KM estimates of the unemployment exit hazard for the group PBD')
+```
+
+```{r}
+# For type RR
+
+hazards_RR <- group_by(data_RR, after) %>% 
+    do(as.data.frame(bshazard(Surv(dur104, uncc)~1, data=., verbose=FALSE, degree=2))) %>% 
+    ungroup
+ggplot(hazards_RR, aes(x=time, y=hazard, group=after)) + geom_line(aes(col=after)) +
+    geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci, fill=after), alpha=0.3) + ylim(0, 0.15) + xlim(0, 104) +
+    xlab('weeks') + ylab('hazard') + ggtitle('KM estimates of the unemployment exit hazard for the group RR')
+```
+
+```{r}
+# For type Control
+
+hazards_control <- group_by(data_control, after) %>% 
+    do(as.data.frame(bshazard(Surv(dur104, uncc)~1, data=., verbose=FALSE, degree=2))) %>% 
+    ungroup
+ggplot(hazards_control, aes(x=time, y=hazard, group=after)) + geom_line(aes(col=after)) +
+    geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci, fill=after), alpha=0.3) + ylim(0, 0.15) + xlim(0, 104) +
+    xlab('weeks') + ylab('hazard') + ggtitle('KM estimates of the unemployment exit hazard for the group Control')
+```
+
+
+## **Question 5. Estimate the causal treatment effect in a PH model**
+
+```{r}
+# Prepare to run the PD model
+udat %>%
+  mutate(all = tr * (t39 + t52) ) ->
+  udat
+
+breaks <- seq(from=3,to=59, by=4)
+labels <- paste("(", c(0,breaks), ",", c(breaks, 104), "]", sep="")
+
+gux <- survSplit(Surv(dur104, uncc) ~., data=udat, cut=breaks,
+                 end="time", event="death", start="start", episode="interval")
+
+gux %>%
+  mutate(exposure=time-start,
+         interval=factor(interval+1, labels=labels)) ->
+  gux
+
+dim(gux)
+```
+
+```{r}
+library(stargazer)
+```
+
+
+```{r}
+# Set up the PWE PH model with the main variables stated in the paper
+pwe <- glm(death ~ interval + 
+             t39 + t52 + tr +
+             all + after0 + 
+             t39_a0 + t52_a0 + tr_a0 +
+             t39tra0 + t52tra0, 
+             offset=log(exposure), data=gux, family=poisson)
+
+stargazer(pwe, 
+          dep.var.caption="", dep.var.labels="",
+          keep=1:15,
+          omit.table.layout="n", star.cutoffs=NA,
+          keep.stat=c("n", "ll"), no.space=TRUE,
+          header=FALSE,
+          title="The PWE model", type="text"
+)
+```
+
+```{r}
+# Set up the PWE PH model with several control variables
+pwe_control <- glm(death ~ interval + 
+             t39 + t52 + tr +
+             all + after0 + 
+             t39_a0 + t52_a0 + tr_a0 +
+             t39tra0 + t52tra0 +
+             age + married + single + divorced +
+             f_marr + f_single + f_divor +
+             med_educ + hi_educ +
+             seasonal + manuf +
+             y1988 + y1989 + y1990 + y1991 +
+             q2 + q3 + q4
+             , 
+             offset=log(exposure), data=gux, family=poisson)
+
+stargazer(pwe_control, 
+          dep.var.caption="", dep.var.labels="",
+          keep=1:15,
+          omit.table.layout="n", star.cutoffs=NA,
+          keep.stat=c("n", "ll"), no.space=TRUE,
+          header=FALSE,
+          title="The PWE model with several control variables", type="text"
+)
+```
+
